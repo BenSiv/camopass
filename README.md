@@ -71,7 +71,7 @@ camopass hide <source_store> <target_store> <gpg_recipient_id>
 ```
 *Example:*
 ```bash
-camopass hide ~/.password-store ~/Projects/passwords A748A133F7C13732
+camopass hide ~/.password-store ~/Projects/passwords my-gpg-key-id
 ```
 
 This will create `~/Projects/passwords` populated with:
@@ -88,13 +88,13 @@ camopass list ~/Projects/passwords
 ### 3. Print a Password
 To print the decrypted password details to stdout:
 ```bash
-camopass show ~/Projects/passwords google/bensiv92
+camopass show ~/Projects/passwords google/username
 ```
 
 ### 4. Copy to Clipboard Silently
 To silently copy the password to your Wayland clipboard (clears automatically in 45 seconds):
 ```bash
-camopass clip ~/Projects/passwords google/bensiv92
+camopass clip ~/Projects/passwords google/username
 ```
 
 ---
@@ -115,8 +115,8 @@ kp() {
 ```
 
 ### The result:
-* **`kp -c google/bensiv92`** -> Copies the password to your clipboard securely (completely silent, auto-clears in 45s).
-* **`kp google/bensiv92`** -> Decrypts and prints the credentials directly.
+* **`kp -c google/username`** -> Copies the password to your clipboard securely (completely silent, auto-clears in 45s).
+* **`kp google/username`** -> Decrypts and prints the credentials directly.
 
 ---
 
