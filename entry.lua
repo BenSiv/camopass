@@ -1,6 +1,4 @@
-#!/usr/bin/env luam
-
-package.path = package.path .. ";./lib/?.luam;./lib/?.lua;/usr/local/lib/camopass/?.luam"
+package.path = package.path .. ";./?.lua;src/?.lua"
 require("obfuscator")
 
 -- Print usage instructions using Luam's triple-quoted strings

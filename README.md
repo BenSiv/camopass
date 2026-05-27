@@ -20,17 +20,40 @@ CamoPass solves this by **obfuscating your entire password store filesystem** in
 
 ---
 
+## Dependencies & Compilation
+
+CamoPass compiles into a completely standalone static binary (requiring zero external runtime libraries) by embedding the Luam engine.
+
+### Dependencies:
+1. **Luam Toolchain:** The `luam` compiler and core static runtime must be compiled in your system. By default, the build script expects your local `luam` repository to be located at `~/Projects/luam` (overrideable via `LUAM_DIR`).
+2. **Standard Build Tools:** `gcc` and standard Unix compilation utilities.
+
+### Building from Source:
+You can build the static binary easily using the build script at the `bld/` directory:
+```bash
+# Build using default ~/Projects/luam path
+bash bld/build.sh
+
+# Or specify a custom Luam source path
+LUAM_DIR=/path/to/luam bash bld/build.sh
+```
+
+This compiles a single standalone native binary at `bin/camopass`.
+
+---
+
 ## Installation
 
-To install CamoPass system-wide on your Linux environment:
+To build and install CamoPass system-wide on your Linux environment:
 
 ```bash
 git clone https://github.com/BenSiv/camopass.git
 cd camopass
+make
 sudo make install
 ```
 
-This will install the main executable to `/usr/local/bin/camopass` and the core Luam library to `/usr/local/lib/camopass/obfuscator.luam`.
+This will copy the statically compiled standalone binary `bin/camopass` directly to `/usr/local/bin/camopass`.
 
 To uninstall:
 ```bash

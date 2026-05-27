@@ -1,4 +1,4 @@
-package.path = package.path .. ";./lib/?.luam;./lib/?.lua"
+package.path = package.path .. ";./src/?.lua"
 require("obfuscator")
 
 print("Initializing CamoPass tests...")
