@@ -1,5 +1,16 @@
 -- CamoPass Core Obfuscator Library (Luam)
 
+-- Helper: Resolve tilde (~) paths to absolute home directory paths
+function resolve_path(path)
+    if string.sub(path, 1, 2) == "~/" then
+        return os.getenv("HOME") .. string.sub(path, 2)
+    elseif path == "~" then
+        return os.getenv("HOME")
+    else
+        return path
+    end
+end
+
 -- Helper: Split a string by delimiter using a while loop (Luam style)
 function split(str, sep)
     result = {}
@@ -21,8 +32,9 @@ end
 
 -- Scan the store recursively for all non-hidden GPG files
 function scan_store(store_path)
+    store_path = resolve_path(store_path)
     files = {}
-    p = io.popen("find " .. string.format("%q", store_path) .. " -name '*.gpg' -not -path '*/.*'")
+    p = io.popen("find " .. string.format("%q", store_path) .. " -name '*.gpg' -not -path '*/.git/*'")
     if p == nil then
         return files
     end
@@ -42,6 +54,7 @@ end
 
 -- Decrypt a GPG file in memory
 function decrypt_file(filepath)
+    filepath = resolve_path(filepath)
     -- Try quiet batch mode first (fast if cached)
     p = io.popen("gpg --quiet --batch --decrypt " .. string.format("%q", filepath) .. " 2>/dev/null")
     if p == nil then
@@ -66,6 +79,7 @@ end
 
 -- Load and parse the decrypted index
 function load_index(store_path)
+    store_path = resolve_path(store_path)
     index_file = store_path .. "/index.gpg"
     test_f = io.open(index_file, "r")
     if test_f == nil then
@@ -96,6 +110,9 @@ end
 
 -- Perform the complete metadata obfuscation
 function obfuscate_store(source_path, target_path, gpg_id)
+    source_path = resolve_path(source_path)
+    target_path = resolve_path(target_path)
+    
     files = scan_store(source_path)
     if #files == 0 then
         return false, "No GPG credentials found in source store."
