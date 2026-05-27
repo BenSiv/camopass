@@ -64,14 +64,14 @@ sudo make uninstall
 
 ## Command Line Usage
 
-### 1. Obfuscate an Existing Password Store
+### 1. Hide an Existing Password Store
 To convert a standard readable `pass` repository into a secure, obfuscated repository:
 ```bash
-camopass obfuscate <source_store> <target_store> <gpg_recipient_id>
+camopass hide <source_store> <target_store> <gpg_recipient_id>
 ```
 *Example:*
 ```bash
-camopass obfuscate ~/.password-store ~/Projects/passwords A748A133F7C13732
+camopass hide ~/.password-store ~/Projects/passwords A748A133F7C13732
 ```
 
 This will create `~/Projects/passwords` populated with:

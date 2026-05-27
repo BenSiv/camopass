@@ -7,7 +7,7 @@ function usage()
 CamoPass - Secure Metadata Obfuscator for Pass (MIT License)
 
 Usage:
-  camopass obfuscate <source_store> <target_store> <gpg_id>
+  camopass hide <source_store> <target_store> <gpg_id>
   camopass list <store_path>
   camopass show <store_path> <entry_name>
   camopass clip <store_path> <entry_name>
@@ -22,9 +22,9 @@ end
 
 cmd = args[1]
 
-if cmd == "obfuscate" then
+if cmd == "hide" then
     if #args != 4 then
-        print("Error: obfuscate requires <source_store> <target_store> <gpg_id>")
+        print("Error: hide requires <source_store> <target_store> <gpg_id>")
         os.exit(false)
     end
     success, err = obfuscate_store(args[2], args[3], args[4])
