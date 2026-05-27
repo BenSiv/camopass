@@ -71,10 +71,10 @@ camopass hide <source_store> <target_store> <gpg_recipient_id>
 ```
 *Example:*
 ```bash
-camopass hide ~/.password-store ~/Projects/passwords my-gpg-key-id
+camopass hide /path/to/source-store /path/to/target-store my-gpg-key-id
 ```
 
-This will create `~/Projects/passwords` populated with:
+This will create `/path/to/target-store` populated with:
 * `index.gpg` - The securely encrypted lookup index.
 * `e1.gpg`, `e2.gpg`, ... - Your fully encrypted GPG credentials under generic names.
 * `.gpg-id` - Your GPG key recipient config.
@@ -82,19 +82,19 @@ This will create `~/Projects/passwords` populated with:
 ### 2. List All Credentials
 To view all your human-readable credential paths (requires GPG decryption of the index once):
 ```bash
-camopass list ~/Projects/passwords
+camopass list /path/to/target-store
 ```
 
 ### 3. Print a Password
 To print the decrypted password details to stdout:
 ```bash
-camopass show ~/Projects/passwords google/username
+camopass show /path/to/target-store google/username
 ```
 
 ### 4. Copy to Clipboard Silently
 To silently copy the password to your Wayland clipboard (clears automatically in 45 seconds):
 ```bash
-camopass clip ~/Projects/passwords google/username
+camopass clip /path/to/target-store google/username
 ```
 
 ---
@@ -105,7 +105,7 @@ To make your day-to-day workflow incredibly fast, add this lightweight shell fun
 
 ```bash
 kp() {
-    local db="$HOME/Projects/passwords"
+    local db="/path/to/target-store"
     if [ "$1" = "-c" ]; then
         camopass clip "$db" "$2"
     else
