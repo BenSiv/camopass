@@ -63,8 +63,37 @@ if mappings == nil then
     os.exit(false)
 end
 
-assert(mappings["social/mastodon"] == "e1", "Test Failed: mapping for social/mastodon was " .. tostring(mappings["social/mastodon"]))
-assert(mappings["test1"] == "e2", "Test Failed: mapping for test1 was " .. tostring(mappings["test1"]))
+salt = mappings["__salt__"]
+assert(salt != nil and string.len(salt) == 16, "Test Failed: Salt is not valid 16-character hex string: " .. tostring(salt))
+
+obf1 = mappings["social/mastodon"]
+obf2 = mappings["test1"]
+
+assert(obf1 != nil and string.len(obf1) == 10, "Test Failed: Obfuscated name for social/mastodon is not 10 chars: " .. tostring(obf1))
+assert(obf2 != nil and string.len(obf2) == 10, "Test Failed: Obfuscated name for test1 is not 10 chars: " .. tostring(obf2))
+
+-- Verify Git-stability (Adding a new file preserves old names and uses the same salt)
+print("Verifying Git stability (preserving salt & names)...")
+os.execute("echo 'new_secret' | gpg --batch --yes --encrypt --recipient " .. gpg_id .. " --output " .. source_dir .. "/a_new_first_credential.gpg")
+
+success, msg = obfuscate_store(source_dir, target_dir, gpg_id)
+if not success then
+    print("Test Failed during stability check: " .. (msg or "unknown error"))
+    os.exit(false)
+end
+
+new_mappings = load_index(target_dir)
+if new_mappings == nil then
+    print("Test Failed: Index failed to reload.")
+    os.exit(false)
+end
+
+assert(new_mappings["__salt__"] == salt, "Test Failed: Salt changed during second hide!")
+assert(new_mappings["social/mastodon"] == obf1, "Test Failed: Name for social/mastodon changed after adding new entry!")
+assert(new_mappings["test1"] == obf2, "Test Failed: Name for test1 changed after adding new entry!")
+
+obf3 = new_mappings["a_new_first_credential"]
+assert(obf3 != nil and string.len(obf3) == 10, "Test Failed: New credential not mapped correctly: " .. tostring(obf3))
 
 print("Cleaning test environment...")
 os.execute("rm -rf " .. source_dir .. " " .. target_dir)
@@ -74,3 +103,4 @@ print("""
     ALL CAMOPASS TESTS PASSED!
 ===========================================
 """)
+

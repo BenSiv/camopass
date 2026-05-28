@@ -30,6 +30,71 @@ function trim(s)
     return string.match(s, "^%s*(.-)%s*$")
 end
 
+-- Helper: Generate a secure 16-character hex salt from /dev/urandom
+function generate_salt()
+    f = io.open("/dev/urandom", "rb")
+    if f == nil then
+        -- Fallback to pseudo-random generator
+        math.randomseed(os.time())
+        s = ""
+        chars = "0123456789abcdef"
+        i = 1
+        while i <= 16 do
+            r = math.random(1, 16)
+            s = s .. string.sub(chars, r, r)
+            i = i + 1
+        end
+        return s
+    end
+    io.input(f)
+    bytes = io.read(8)
+    io.close(f)
+    if bytes == nil or string.len(bytes) == 0 then
+        -- Fallback to pseudo-random generator
+        math.randomseed(os.time())
+        s = ""
+        chars = "0123456789abcdef"
+        i = 1
+        while i <= 16 do
+            r = math.random(1, 16)
+            s = s .. string.sub(chars, r, r)
+            i = i + 1
+        end
+        return s
+    end
+    s = ""
+    i = 1
+    while i <= string.len(bytes) do
+        s = s .. string.format("%02x", string.byte(bytes, i))
+        i = i + 1
+    end
+    return s
+end
+
+-- Helper: SHA-256 hash using system command
+function sha256(str)
+    cmd = "printf %s " .. string.format("%q", str) .. " | sha256sum 2>/dev/null"
+    p = io.popen(cmd)
+    if p == nil then
+        cmd = "printf %s " .. string.format("%q", str) .. " | openssl dgst -sha256 2>/dev/null"
+        p = io.popen(cmd)
+    end
+    if p == nil then
+        -- Fallback to md5sum
+        cmd = "printf %s " .. string.format("%q", str) .. " | md5sum 2>/dev/null"
+        p = io.popen(cmd)
+    end
+    if p == nil then
+        return nil
+    end
+    io.input(p)
+    out = io.read("*a")
+    io.close(p)
+    hash = string.match(out, "(%x+)")
+    return hash
+end
+
+
 -- Scan the store recursively for all non-hidden GPG files
 function scan_store(store_path)
     store_path = resolve_path(store_path)
@@ -121,6 +186,17 @@ function obfuscate_store(source_path, target_path, gpg_id)
     -- Ensure target directory exists
     os.execute("mkdir -p " .. string.format("%q", target_path))
     
+    -- Load existing index to reuse salt if present
+    salt = nil
+    existing_mappings = load_index(target_path)
+    if existing_mappings != nil then
+        salt = existing_mappings["__salt__"]
+    end
+    
+    if salt == nil or salt == "" then
+        salt = generate_salt()
+    end
+    
     index_lines = {}
     i = 1
     while i <= #files do
@@ -128,8 +204,12 @@ function obfuscate_store(source_path, target_path, gpg_id)
         rel_path = string.sub(filepath, string.len(source_path) + 2)
         human_name = string.sub(rel_path, 1, -5)
         
-        -- Generate sequential obfuscated identifier
-        obf_name = "e" .. i
+        -- Generate stable, deterministic obfuscated identifier (first 10 chars of sha256)
+        hash = sha256(human_name .. salt)
+        if hash == nil then
+            return false, "Failed to compute stable hash for credential: " .. human_name
+        end
+        obf_name = string.sub(hash, 1, 10)
         
         -- Copy encrypted GPG file directly (perfect security, zero decryption overhead)
         target_file = target_path .. "/" .. obf_name .. ".gpg"
@@ -138,6 +218,9 @@ function obfuscate_store(source_path, target_path, gpg_id)
         table.insert(index_lines, human_name .. " : " .. obf_name)
         i = i + 1
     end
+    
+    -- Add the salt to the index so we can retrieve it during future updates
+    table.insert(index_lines, "__salt__ : " .. salt)
     
     -- Write temporary plaintext index in RAM, encrypt it, then shred it
     temp_index = "/dev/shm/index_temp.txt"

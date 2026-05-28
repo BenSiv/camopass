@@ -26,14 +26,34 @@ function get_store_path(passed_path)
     return resolve_path(default_store)
 end
 
+-- Helper: Retrieve and validate plain store path from settings.json
+function get_plain_store_path()
+    settings_file = resolve_path("~/.config/camopass/settings.json")
+    f = io.open(settings_file, "r")
+    if f == nil then
+        return nil
+    end
+    io.input(f)
+    content = io.read("*a")
+    io.close(f)
+    
+    plain_store = string.match(content, '"plain_store"%s*:%s*"([^"]+)"')
+    if plain_store == nil then
+        return nil
+    end
+    return resolve_path(plain_store)
+end
+
 -- Print usage instructions using Luam's triple-quoted strings
 function usage()
     print("""
 CamoPass - Secure Metadata Obfuscator for Pass (MIT License)
 
 Usage:
-  camopass init <store_path>
+  camopass init <store_path> [<plain_store_path>]
   camopass hide <source_store> <target_store> <gpg_id>
+  camopass insert <entry_name>
+  camopass generate <entry_name> [<length>]
   camopass list [<store_path>]
   camopass show [<store_path>] <entry_name>
   camopass clip [<store_path>] <entry_name>
@@ -49,11 +69,15 @@ end
 cmd = args[1]
 
 if cmd == "init" then
-    if #args != 2 then
-        print("Error: init requires <store_path>")
+    if #args != 2 and #args != 3 then
+        print("Error: init requires <store_path> [<plain_store_path>]")
         os.exit(false)
     end
     store_path = resolve_path(args[2])
+    plain_store_path = nil
+    if #args == 3 then
+        plain_store_path = resolve_path(args[3])
+    end
     
     -- Ensure configuration directory exists
     config_dir = resolve_path("~/.config/camopass")
@@ -67,9 +91,17 @@ if cmd == "init" then
         os.exit(false)
     end
     io.output(f)
-    io.write('{\n  "default_store": "' .. store_path .. '"\n}\n')
+    if plain_store_path != nil then
+        io.write('{\n  "default_store": "' .. store_path .. '",\n  "plain_store": "' .. plain_store_path .. '"\n}\n')
+    else
+        io.write('{\n  "default_store": "' .. store_path .. '"\n}\n')
+    end
     io.close(f)
-    print("Successfully initialized default store path: " .. store_path)
+    if plain_store_path != nil then
+        print("Successfully initialized default store path: " .. store_path .. " and plain store path: " .. plain_store_path)
+    else
+        print("Successfully initialized default store path: " .. store_path)
+    end
 
 elseif cmd == "hide" then
     if #args != 4 then
@@ -100,7 +132,9 @@ elseif cmd == "list" then
     keys = {}
     k, v = next(mappings)
     while k != nil do
-        table.insert(keys, k)
+        if k != "__salt__" then
+            table.insert(keys, k)
+        end
         k, v = next(mappings, k)
     end
     table.sort(keys)
@@ -189,6 +223,79 @@ elseif cmd == "clip" then
         
         -- Fork a background process to clear Wayland clipboard after 45 seconds
         os.execute("(sleep 45 && wl-copy --clear) >/dev/null 2>&1 &")
+    end
+
+elseif cmd == "insert" or cmd == "generate" then
+    if #args < 2 then
+        print("Error: " .. cmd .. " requires <entry_name>")
+        os.exit(false)
+    end
+    entry_name = args[2]
+    
+    plain_store = get_plain_store_path()
+    target_store = get_store_path(nil)
+    
+    if plain_store == nil then
+        print("Error: plain_store is not configured in settings.json.")
+        print("Please run 'camopass init <default_store> <plain_store>' to initialize both.")
+        os.exit(false)
+    end
+    
+    -- 1. Read GPG key ID from the plain store's .gpg-id
+    gpg_id_file = plain_store .. "/.gpg-id"
+    f = io.open(gpg_id_file, "r")
+    if f == nil then
+        print("Error: Could not read .gpg-id from plain store: " .. plain_store)
+        os.exit(false)
+    end
+    io.input(f)
+    gpg_id = io.read("*l")
+    io.close(f)
+    if gpg_id == nil or gpg_id == "" then
+        print("Error: .gpg-id is empty in plain store.")
+        os.exit(false)
+    end
+    gpg_id = string.gsub(gpg_id, "%s+", "")
+    
+    -- 2. Execute pass insert or generate targeting plain_store
+    status = nil
+    if cmd == "insert" then
+        cmd_str = string.format("PASSWORD_STORE_DIR=%q pass insert %q", plain_store, entry_name)
+        status = os.execute(cmd_str)
+    else
+        extra_args = ""
+        i = 3
+        while i <= #args do
+            extra_args = extra_args .. " " .. args[i]
+            i = i + 1
+        end
+        cmd_str = string.format("PASSWORD_STORE_DIR=%q pass generate %q%s", plain_store, entry_name, extra_args)
+        status = os.execute(cmd_str)
+    end
+    
+    if status == true or status == 0 then
+        print("Successfully updated plain store! Re-hiding to target store...")
+        
+        -- 3. Run the obfuscation hide logic
+        success, err = obfuscate_store(plain_store, target_store, gpg_id)
+        if not success then
+            print("Obfuscation failed: " .. err)
+            os.exit(false)
+        end
+        print("Obfuscation successful!")
+        
+        -- 4. Check if target store is a Git repository and commit/push
+        status_git = os.execute("git -C " .. string.format("%q", target_store) .. " rev-parse --is-inside-work-tree >/dev/null 2>&1")
+        if status_git == true or status_git == 0 then
+            print("Syncing with target Git repository...")
+            os.execute("git -C " .. string.format("%q", target_store) .. " add -A")
+            os.execute("git -C " .. string.format("%q", target_store) .. " commit -m " .. string.format("%q", "CamoPass sync"))
+            os.execute("git -C " .. string.format("%q", target_store) .. " push")
+            print("Git sync complete!")
+        end
+    else
+        print("Error: pass " .. cmd .. " command failed.")
+        os.exit(false)
     end
 
 else
