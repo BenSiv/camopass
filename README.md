@@ -12,11 +12,10 @@ CamoPass solves this by **obfuscating your entire password store filesystem** in
 
 ## Key Features
 
-* **Absolute Metadata Privacy:** Directory hierarchies, filenames, and change-history are replaced by completely opaque sequential IDs (e.g. `e1.gpg`, `e2.gpg`). GitHub sees absolutely zero service names or account identities.
+* **Absolute Metadata Privacy:** Directory hierarchies, filenames, and change-history are replaced by completely opaque hash-based identifiers (e.g. `0a1b2c3d4e.gpg`). GitHub sees absolutely zero service names or account identities.
 * **Perfect Security & Zero Decryption during Migration:** CamoPass migrates your store by copying already-encrypted `.gpg` files directly into their new obfuscated locations. **No passwords are decrypted in RAM or disk during obfuscation**, and you do not need to enter your GPG passphrase to migrate.
-* **Deterministic Sorted Mappings:** Scans are automatically sorted alphabetically, ensuring your sequential IDs remain perfectly stable and consistent.
+* **Stable Deterministic Hashing:** Uses salted SHA256 hashing to generate obfuscated names, ensuring your file mappings remain perfectly stable and consistent even as you add new entries.
 * **Silent Clipboard Integration:** The `clip` command decrypts the entry and streams it directly to your system's Wayland clipboard (`wl-copy`) with **zero terminal output**. It forks a silent background process to automatically clear your clipboard after exactly 45 seconds.
-* **Written in Luam:** Complies strictly with your safe language fork constraints (implicit locals, no `local` keyword, inequality via `!=`, and pure `while` iterative structures).
 
 ---
 
@@ -76,7 +75,7 @@ camopass hide /path/to/source-store /path/to/target-store my-gpg-key-id
 
 This will create `/path/to/target-store` populated with:
 * `index.gpg` - The securely encrypted lookup index.
-* `e1.gpg`, `e2.gpg`, ... - Your fully encrypted GPG credentials under generic names.
+* `0a1b2c3d4e.gpg`, `f1e2d3c4b5.gpg`, ... - Your fully encrypted GPG credentials under generic names.
 * `.gpg-id` - Your GPG key recipient config.
 
 ### 2. List All Credentials
