@@ -82,9 +82,11 @@ if cmd == "init" then
         os.exit(false)
     end
     store_path = resolve_path(args[2])
+    os.execute("mkdir -p " .. string.format("%q", store_path))
     plain_store_path = nil
     if #args == 3 then
         plain_store_path = resolve_path(args[3])
+        os.execute("mkdir -p " .. string.format("%q", plain_store_path))
     end
     
     -- Ensure configuration directory exists
@@ -227,24 +229,32 @@ elseif cmd == "clip" then
     end
     password = lines[1]
     
-    -- Pre-validate wl-copy is working and can connect to Wayland
-    status = os.execute("echo -n | wl-copy >/dev/null 2>&1")
-    if status != 0 and status != true then
-        print("Error: Clipboard command 'wl-copy' failed. Please ensure 'wl-clipboard' is installed and you are running a Wayland session.")
-        os.exit(false)
-    end
-    
-    -- Securely stream the decrypted password into wl-copy silently
+    -- Use a more robust clipboard copying strategy (Wayland then X11 fallback)
+    success = false
     p = io.popen("wl-copy", "w")
     if p != nil then
         io.output(p)
         io.write(password)
         io.close(p)
-        
-        -- Fork a background process to clear Wayland clipboard after 45 seconds
-        os.execute("(sleep 45 && wl-copy --clear) >/dev/null 2>&1 &")
+        success = true
+    end
+    
+    if not success then
+        p = io.popen("xclip -selection clipboard", "w")
+        if p != nil then
+            io.output(p)
+            io.write(password)
+            io.close(p)
+            success = true
+        end
+    end
+
+    if success then
+        -- Fork a background process to clear clipboard after 45 seconds
+        -- Try clearing both Wayland and X11 clipboards
+        os.execute("(sleep 45 && (wl-copy --clear || xclip -selection clipboard /dev/null)) >/dev/null 2>&1 &")
     else
-        print("Error: Could not execute 'wl-copy'.")
+        print("Error: Could not copy to clipboard. Please ensure 'wl-clipboard' or 'xclip' is installed.")
         os.exit(false)
     end
 
