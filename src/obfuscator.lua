@@ -247,7 +247,7 @@ function obfuscate_store(source_path, target_path, gpg_id)
     io.close(f)
     
     -- Encrypt index using the GPG recipient key ID
-    encrypt_cmd = "gpg --batch --quiet --yes --encrypt --recipient " .. string.format("%q", gpg_id) .. " --output " .. string.format("%q", target_path .. "/index.gpg") .. " " .. string.format("%q", temp_index)
+    encrypt_cmd = "gpg --batch --quiet --yes --always-trust --encrypt --recipient " .. string.format("%q", gpg_id) .. " --output " .. string.format("%q", target_path .. "/index.gpg") .. " " .. string.format("%q", temp_index)
     os.execute(encrypt_cmd)
     
     -- Shred GPG temporary buffer from RAM
