@@ -1,4 +1,12 @@
-package.path = package.path .. ";./src/?.lua"
+-- Dynamically locate the script's directory to allow execution from any path
+local_path = "."
+if arg != nil and arg[0] != nil then
+    dir_match = string.match(arg[0], "^(.-)[/\\][^/\\]-$")
+    if dir_match != nil and dir_match != "" then
+        local_path = dir_match
+    end
+end
+package.path = package.path .. ";" .. local_path .. "/../src/?.lua"
 require("obfuscator")
 
 print("Initializing CamoPass tests...")

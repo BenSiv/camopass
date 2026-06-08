@@ -1,4 +1,12 @@
-package.path = package.path .. ";./?.lua;src/?.lua"
+-- Dynamically locate the script's directory to allow execution from any path
+local_path = "."
+if arg != nil and arg[0] != nil then
+    dir_match = string.match(arg[0], "^(.-)[/\\][^/\\]-$")
+    if dir_match != nil and dir_match != "" then
+        local_path = dir_match
+    end
+end
+package.path = package.path .. ";" .. local_path .. "/?.lua;" .. local_path .. "/src/?.lua"
 require("obfuscator")
 
 -- Helper: Retrieve and validate default store path from settings.json if not passed explicitly
@@ -189,30 +197,42 @@ elseif cmd == "clip" then
         store_path = get_store_path(args[2])
         entry_name = args[3]
     else
+        print("Error: clip requires <entry_name> [or <store_path> <entry_name>]")
         os.exit(false)
     end
     
     mappings = load_index(store_path)
     if mappings == nil then
+        print("Error: Could not load index.gpg from " .. store_path)
         os.exit(false)
     end
     
     obf_file = mappings[entry_name]
     if obf_file == nil then
+        print("Error: Entry '" .. entry_name .. "' not found in index.")
         os.exit(false)
     end
     
     filepath = store_path .. "/" .. obf_file .. ".gpg"
     decrypted = decrypt_file(filepath)
     if decrypted == nil or decrypted == "" then
+        print("Error: Decryption failed or file is empty.")
         os.exit(false)
     end
     
     lines = split(decrypted, "\n")
     if #lines == 0 then
+        print("Error: Decrypted content has no lines.")
         os.exit(false)
     end
     password = lines[1]
+    
+    -- Pre-validate wl-copy is working and can connect to Wayland
+    status = os.execute("echo -n | wl-copy >/dev/null 2>&1")
+    if status != 0 and status != true then
+        print("Error: Clipboard command 'wl-copy' failed. Please ensure 'wl-clipboard' is installed and you are running a Wayland session.")
+        os.exit(false)
+    end
     
     -- Securely stream the decrypted password into wl-copy silently
     p = io.popen("wl-copy", "w")
@@ -223,6 +243,9 @@ elseif cmd == "clip" then
         
         -- Fork a background process to clear Wayland clipboard after 45 seconds
         os.execute("(sleep 45 && wl-copy --clear) >/dev/null 2>&1 &")
+    else
+        print("Error: Could not execute 'wl-copy'.")
+        os.exit(false)
     end
 
 elseif cmd == "insert" or cmd == "generate" then
