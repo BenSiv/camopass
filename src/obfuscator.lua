@@ -1,14 +1,26 @@
 -- CamoPass Core Obfuscator Library (Luam)
 
--- Helper: Resolve tilde (~) paths to absolute home directory paths
+-- Helper: Resolve tilde (~) paths to absolute home directory paths and ensure absolute paths
 function resolve_path(path)
-    if string.sub(path, 1, 2) == "~/" then
-        return os.getenv("HOME") .. string.sub(path, 2)
-    elseif path == "~" then
-        return os.getenv("HOME")
-    else
-        return path
+    p = path
+    if string.sub(p, 1, 2) == "~/" then
+        p = os.getenv("HOME") .. string.sub(p, 2)
+    elseif p == "~" then
+        p = os.getenv("HOME")
     end
+    
+    -- Use realpath to ensure we have an absolute path (even if it doesn't exist yet)
+    handle = io.popen("realpath -m " .. string.format("%q", p) .. " 2>/dev/null")
+    if handle != nil then
+        io.input(handle)
+        result = io.read("*l")
+        io.close(handle)
+        if result != nil and result != "" then
+            return result
+        end
+    end
+    
+    return p
 end
 
 -- Helper: Split a string by delimiter using a while loop (Luam style)
