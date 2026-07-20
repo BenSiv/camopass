@@ -210,6 +210,7 @@ function obfuscate_store(source_path, target_path, gpg_id)
     end
     
     index_lines = {}
+    valid_obf_names = { ["index"] = true }
     i = 1
     while i <= #files do
         filepath = files[i]
@@ -222,12 +223,27 @@ function obfuscate_store(source_path, target_path, gpg_id)
             return false, "Failed to compute stable hash for credential: " .. human_name
         end
         obf_name = string.sub(hash, 1, 10)
+        valid_obf_names[obf_name] = true
         
         -- Copy encrypted GPG file directly (perfect security, zero decryption overhead)
         target_file = target_path .. "/" .. obf_name .. ".gpg"
         os.execute("cp " .. string.format("%q", filepath) .. " " .. string.format("%q", target_file))
         
         table.insert(index_lines, human_name .. " : " .. obf_name)
+        i = i + 1
+    end
+    
+    -- Cleanup orphaned .gpg files in the target store
+    target_files = scan_store(target_path)
+    i = 1
+    while i <= #target_files do
+        t_filepath = target_files[i]
+        t_rel_path = string.sub(t_filepath, string.len(target_path) + 2)
+        t_obf_name = string.sub(t_rel_path, 1, -5)
+        
+        if valid_obf_names[t_obf_name] == nil then
+            os.execute("rm -f " .. string.format("%q", t_filepath))
+        end
         i = i + 1
     end
     

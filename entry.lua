@@ -65,6 +65,8 @@ Usage:
   camopass list [<store_path>]
   camopass show [<store_path>] <entry_name>
   camopass clip [<store_path>] <entry_name>
+  camopass edit <entry_name>
+  camopass remove <entry_name>
 """)
     os.exit(false)
 end
@@ -258,7 +260,7 @@ elseif cmd == "clip" then
         os.exit(false)
     end
 
-elseif cmd == "insert" or cmd == "generate" then
+elseif cmd == "insert" or cmd == "generate" or cmd == "edit" or cmd == "remove" then
     if #args < 2 then
         print("Error: " .. cmd .. " requires <entry_name>")
         os.exit(false)
@@ -290,10 +292,16 @@ elseif cmd == "insert" or cmd == "generate" then
     end
     gpg_id = string.gsub(gpg_id, "%s+", "")
     
-    -- 2. Execute pass insert or generate targeting plain_store
+    -- 2. Execute pass command targeting plain_store
     status = nil
     if cmd == "insert" then
         cmd_str = string.format("PASSWORD_STORE_DIR=%q pass insert %q", plain_store, entry_name)
+        status = os.execute(cmd_str)
+    elseif cmd == "edit" then
+        cmd_str = string.format("PASSWORD_STORE_DIR=%q pass edit %q", plain_store, entry_name)
+        status = os.execute(cmd_str)
+    elseif cmd == "remove" then
+        cmd_str = string.format("PASSWORD_STORE_DIR=%q pass rm %q", plain_store, entry_name)
         status = os.execute(cmd_str)
     else
         extra_args = ""
