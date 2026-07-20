@@ -67,6 +67,7 @@ Usage:
   camopass clip [<store_path>] <entry_name>
   camopass edit <entry_name>
   camopass remove <entry_name>
+  camopass sync
 """)
     os.exit(false)
 end
@@ -337,6 +338,23 @@ elseif cmd == "insert" or cmd == "generate" or cmd == "edit" or cmd == "remove" 
     else
         print("Error: pass " .. cmd .. " command failed.")
         os.exit(false)
+    end
+
+elseif cmd == "sync" then
+    plain_store = get_plain_store_path()
+    target_store = get_store_path(nil)
+    
+    if target_store != nil then
+        status_git = os.execute("git -C " .. string.format("%q", target_store) .. " rev-parse --is-inside-work-tree >/dev/null 2>&1")
+        if status_git == true or status_git == 0 then
+            print("Syncing target store with Git repository...")
+            os.execute("git -C " .. string.format("%q", target_store) .. " add -A")
+            os.execute("git -C " .. string.format("%q", target_store) .. " commit -m " .. string.format("%q", "CamoPass sync") .. " >/dev/null 2>&1")
+            os.execute("git -C " .. string.format("%q", target_store) .. " push")
+            print("Git sync complete!")
+        else
+            print("Target store is not a Git repository.")
+        end
     end
 
 else
