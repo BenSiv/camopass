@@ -274,3 +274,44 @@ function obfuscate_store(source_path, target_path, gpg_id)
     
     return true, "Successfully obfuscated " .. #files .. " entries."
 end
+
+-- Perform the reverse: decrypt index and restore plain files
+function unhide_store(source_obfuscated, target_plain)
+    source_obfuscated = resolve_path(source_obfuscated)
+    target_plain = resolve_path(target_plain)
+    
+    mappings = load_index(source_obfuscated)
+    if mappings == nil then
+        return false, "Could not load or decrypt index.gpg from " .. source_obfuscated
+    end
+    
+    os.execute("mkdir -p " .. string.format("%q", target_plain))
+    
+    count = 0
+    k, v = next(mappings)
+    while k != nil do
+        if k != "__salt__" then
+            human_name = k
+            obf_name = v
+            
+            obf_file = source_obfuscated .. "/" .. obf_name .. ".gpg"
+            plain_file = target_plain .. "/" .. human_name .. ".gpg"
+            
+            -- create directories
+            plain_dir = string.match(plain_file, "^(.*)/[^/]+$")
+            if plain_dir != nil then
+                os.execute("mkdir -p " .. string.format("%q", plain_dir))
+            end
+            
+            -- copy file
+            os.execute("cp " .. string.format("%q", obf_file) .. " " .. string.format("%q", plain_file))
+            count = count + 1
+        end
+        k, v = next(mappings, k)
+    end
+    
+    -- copy gpg id
+    os.execute("cp " .. string.format("%q", source_obfuscated .. "/.gpg-id") .. " " .. string.format("%q", target_plain .. "/.gpg-id"))
+    
+    return true, "Successfully unhid " .. count .. " entries."
+end

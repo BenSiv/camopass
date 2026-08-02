@@ -60,6 +60,7 @@ CamoPass - Secure Metadata Obfuscator for Pass (MIT License)
 Usage:
   camopass init <store_path> [<plain_store_path>]
   camopass hide <source_store> <target_store> <gpg_id>
+  camopass unhide <obfuscated_store> <plain_store>
   camopass insert <entry_name>
   camopass generate <entry_name> [<length>]
   camopass list [<store_path>]
@@ -124,6 +125,18 @@ elseif cmd == "hide" then
     success, err = obfuscate_store(args[2], args[3], args[4])
     if not success then
         print("Obfuscation failed: " .. err)
+        os.exit(false)
+    end
+    print(err)
+    
+elseif cmd == "unhide" then
+    if #args != 3 then
+        print("Error: unhide requires <obfuscated_store> <plain_store>")
+        os.exit(false)
+    end
+    success, err = unhide_store(args[2], args[3])
+    if not success then
+        print("Unhide failed: " .. err)
         os.exit(false)
     end
     print(err)

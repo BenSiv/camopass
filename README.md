@@ -78,7 +78,14 @@ This will create `/path/to/target-store` populated with:
 * `0a1b2c3d4e.gpg`, `f1e2d3c4b5.gpg`, ... - Your fully encrypted GPG credentials under generic names.
 * `.gpg-id` - Your GPG key recipient config.
 
-### 2. List All Credentials
+### 2. Restore an Obfuscated Store (Unhide)
+To perfectly reconstruct a standard plaintext `pass` repository from an obfuscated CamoPass store:
+```bash
+camopass unhide <obfuscated_store> <plain_store>
+```
+This is useful for recovering a corrupted plain store or migrating away from CamoPass.
+
+### 3. List All Credentials
 To view all your human-readable credential paths (requires GPG decryption of the index once):
 ```bash
 camopass list /path/to/target-store

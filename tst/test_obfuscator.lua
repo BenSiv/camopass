@@ -103,12 +103,35 @@ assert(new_mappings["test1"] == obf2, "Test Failed: Name for test1 changed after
 obf3 = new_mappings["a_new_first_credential"]
 assert(obf3 != nil and string.len(obf3) == 10, "Test Failed: New credential not mapped correctly: " .. tostring(obf3))
 
+print("Verifying unhide functionality...")
+unhide_dir = "/tmp/camopass_test_unhide"
+os.execute("rm -rf " .. unhide_dir)
+success, msg = unhide_store(target_dir, unhide_dir)
+if not success then
+    print("Test Failed during unhide: " .. (msg or "unknown error"))
+    os.exit(false)
+end
+
+-- Verify restored files exist
+function check_file_exists(path)
+    f = io.open(path, "r")
+    if f != nil then
+        io.close(f)
+        return true
+    end
+    return false
+end
+
+assert(check_file_exists(unhide_dir .. "/test1.gpg"), "Test Failed: test1.gpg not restored")
+assert(check_file_exists(unhide_dir .. "/social/mastodon.gpg"), "Test Failed: social/mastodon.gpg not restored")
+assert(check_file_exists(unhide_dir .. "/a_new_first_credential.gpg"), "Test Failed: new credential not restored")
+assert(check_file_exists(unhide_dir .. "/.gpg-id"), "Test Failed: .gpg-id not restored")
+
 print("Cleaning test environment...")
-os.execute("rm -rf " .. source_dir .. " " .. target_dir)
+os.execute("rm -rf " .. source_dir .. " " .. target_dir .. " " .. unhide_dir)
 
 print("""
 ===========================================
     ALL CAMOPASS TESTS PASSED!
 ===========================================
 """)
-
