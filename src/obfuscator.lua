@@ -108,10 +108,12 @@ end
 
 
 -- Scan the store recursively for all non-hidden GPG files
+-- index.gpg is always excluded: it is the store's own lookup index, never a credential,
+-- and must never be treated as one (e.g. if source_path and target_path are ever the same).
 function scan_store(store_path)
     store_path = resolve_path(store_path)
     files = {}
-    p = io.popen("find " .. string.format("%q", store_path) .. " -name '*.gpg' -not -path '*/.git/*'")
+    p = io.popen("find " .. string.format("%q", store_path) .. " -name '*.gpg' -not -name 'index.gpg' -not -path '*/.git/*'")
     if p == nil then
         return files
     end
@@ -185,11 +187,51 @@ function load_index(store_path)
     return mappings
 end
 
+-- Safety check for the insert/generate/edit/remove flow: obfuscate_store deletes
+-- any target entry whose plaintext is missing from plain_store (by design, so that
+-- "remove" propagates). That is only safe if plain_store already mirrors every other
+-- entry target_store currently tracks. This detects an incomplete/misconfigured
+-- plain_store (e.g. one that was never populated via unhide) before it causes
+-- obfuscate_store to silently delete entries. touched_entry is excluded from the
+-- check since it is expected to appear/disappear in plain_store as part of this call.
+function check_plain_store_sync(target_store, plain_store, touched_entry)
+    target_store = resolve_path(target_store)
+    plain_store = resolve_path(plain_store)
+
+    mappings = load_index(target_store)
+    if mappings == nil then
+        return true, nil
+    end
+
+    missing = {}
+    k, v = next(mappings)
+    while k != nil do
+        if k != "__salt__" and k != touched_entry then
+            f = io.open(plain_store .. "/" .. k .. ".gpg", "r")
+            if f == nil then
+                table.insert(missing, k)
+            else
+                io.close(f)
+            end
+        end
+        k, v = next(mappings, k)
+    end
+
+    if #missing > 0 then
+        return false, missing
+    end
+    return true, nil
+end
+
 -- Perform the complete metadata obfuscation
 function obfuscate_store(source_path, target_path, gpg_id)
     source_path = resolve_path(source_path)
     target_path = resolve_path(target_path)
-    
+
+    if source_path == target_path then
+        return false, "source_path and target_path must be different (hiding a store into itself would double-wrap every entry, including index.gpg)."
+    end
+
     files = scan_store(source_path)
     if #files == 0 then
         return false, "No GPG credentials found in source store."

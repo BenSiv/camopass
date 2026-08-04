@@ -330,8 +330,23 @@ elseif cmd == "insert" or cmd == "generate" or cmd == "edit" or cmd == "remove" 
     
     if status == true or status == 0 then
         print("Successfully updated plain store! Re-hiding to target store...")
-        
-        -- 3. Run the obfuscation hide logic
+
+        -- 3. Refuse to re-hide if plain_store is missing entries target_store already
+        -- tracks: obfuscate_store would silently delete them as "orphans".
+        sync_ok, missing_entries = check_plain_store_sync(target_store, plain_store, entry_name)
+        if not sync_ok then
+            print("Error: plain_store is missing " .. #missing_entries .. " entrie(s) that target_store still tracks:")
+            i = 1
+            while i <= #missing_entries do
+                print("  - " .. missing_entries[i])
+                i = i + 1
+            end
+            print("Refusing to re-hide (this would delete them from target_store).")
+            print("Run 'camopass unhide " .. target_store .. " " .. plain_store .. "' to resync plain_store first.")
+            os.exit(false)
+        end
+
+        -- 4. Run the obfuscation hide logic
         success, err = obfuscate_store(plain_store, target_store, gpg_id)
         if not success then
             print("Obfuscation failed: " .. err)
@@ -339,7 +354,7 @@ elseif cmd == "insert" or cmd == "generate" or cmd == "edit" or cmd == "remove" 
         end
         print("Obfuscation successful!")
         
-        -- 4. Check if target store is a Git repository and commit/push
+        -- 5. Check if target store is a Git repository and commit/push
         status_git = os.execute("git -C " .. string.format("%q", target_store) .. " rev-parse --is-inside-work-tree >/dev/null 2>&1")
         if status_git == true or status_git == 0 then
             print("Syncing with target Git repository...")
