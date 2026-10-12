@@ -7,7 +7,7 @@ if arg != nil and arg[0] != nil then
     end
 end
 package.path = package.path .. ";" .. local_path .. "/../src/?.lua"
-require("obfuscator")
+obfuscator = require("obfuscator")
 
 print("Initializing CamoPass tests...")
 
@@ -55,7 +55,7 @@ os.execute("echo 'my_secret_pass_2' | gpg --batch --yes --encrypt --recipient " 
 
 -- Run core obfuscator
 print("Running obfuscator engine...")
-success, msg = obfuscate_store(source_dir, target_dir, gpg_id)
+success, msg = obfuscator.obfuscate_store(source_dir, target_dir, gpg_id)
 
 if not success then
     print("Test Failed: " .. (msg or "unknown error"))
@@ -65,7 +65,7 @@ print(msg)
 
 -- Verify structural lookup
 print("Verifying mappings...")
-mappings = load_index(target_dir)
+mappings = obfuscator.load_index(target_dir)
 if mappings == nil then
     print("Test Failed: Index failed to load or decrypt.")
     os.exit(false)
@@ -84,13 +84,13 @@ assert(obf2 != nil and string.len(obf2) == 10, "Test Failed: Obfuscated name for
 print("Verifying Git stability (preserving salt & names)...")
 os.execute("echo 'new_secret' | gpg --batch --yes --encrypt --recipient " .. gpg_id .. " --output " .. source_dir .. "/a_new_first_credential.gpg")
 
-success, msg = obfuscate_store(source_dir, target_dir, gpg_id)
+success, msg = obfuscator.obfuscate_store(source_dir, target_dir, gpg_id)
 if not success then
     print("Test Failed during stability check: " .. (msg or "unknown error"))
     os.exit(false)
 end
 
-new_mappings = load_index(target_dir)
+new_mappings = obfuscator.load_index(target_dir)
 if new_mappings == nil then
     print("Test Failed: Index failed to reload.")
     os.exit(false)
@@ -106,7 +106,7 @@ assert(obf3 != nil and string.len(obf3) == 10, "Test Failed: New credential not 
 print("Verifying unhide functionality...")
 unhide_dir = "/tmp/camopass_test_unhide"
 os.execute("rm -rf " .. unhide_dir)
-success, msg = unhide_store(target_dir, unhide_dir)
+success, msg = obfuscator.unhide_store(target_dir, unhide_dir)
 if not success then
     print("Test Failed during unhide: " .. (msg or "unknown error"))
     os.exit(false)

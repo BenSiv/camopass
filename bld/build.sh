@@ -1,44 +1,24 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Change to project root (one level up from bld/)
+# Thin delegation to luam's shared build orchestrator
+# (lib/static/build.lua), like brain-ex and daat: it owns gathering the
+# sources, bundling and the final compile+link, so luam can reorganise
+# its internals without breaking this script.
+
 cd "$(dirname "$0")/.."
 
-PROJECT="camopass"
-
-# Resolve dependency paths (allow env overrides)
-if [ -z "$LUAM_DIR" ]; then
-    LUAM_DIR="$HOME/Projects/luam"
+if [ -z "${LUAM_DIR:-}" ]; then
+    LUAM_DIR=$(cd ../luam && pwd)
 fi
 
-if [ ! -f "$LUAM_DIR/src/lauxlib.h" ]; then
-    echo "Error: LUAM_DIR not set or lauxlib.h not found at $LUAM_DIR." >&2
+if [ ! -f "$LUAM_DIR/obj/liblua.a" ]; then
+    echo "Error: $LUAM_DIR/obj/liblua.a not found. Set LUAM_DIR to a built luam checkout." >&2
     exit 1
 fi
 
-# Include paths
-INC_LUA="-I$LUAM_DIR/src"
-
-# Lib paths
-LIB_LUA="$LUAM_DIR/obj/liblua.a"
-
-# System libs
-LIBS="-ldl -lm"
-
-echo "Preparing Luam sources..."
-cp src/obfuscator.lua .
-
-echo "Statically compiling native binary using luastatic..."
-export CC=gcc
-luam "$LUAM_DIR/lib/static/init.lua" entry.lua obfuscator.lua "$LIB_LUA" "$INC_LUA" $LIBS
-
-echo "Finalizing binary..."
-mkdir -p bin
-mv entry bin/$PROJECT
-chmod +x bin/$PROJECT
-
-echo "Cleaning up intermediate files..."
-rm -f obfuscator.lua entry.static.c
-
-echo "Static compilation complete: bin/$PROJECT"
-ls -la bin/$PROJECT
+exec "$LUAM_DIR/bin/luam" "$LUAM_DIR/lib/static/build.lua" \
+    --entry main.lua \
+    --bin camopass \
+    --luamdir "$LUAM_DIR" \
+    "$@"

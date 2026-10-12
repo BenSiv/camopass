@@ -30,7 +30,7 @@ CamoPass compiles into a completely standalone static binary (requiring zero ext
 ### Building from Source:
 You can build the static binary easily using the build script at the `bld/` directory:
 ```bash
-# Build using default ~/Projects/luam path
+# Build using a sibling ../luam checkout (already built)
 bash bld/build.sh
 
 # Or specify a custom Luam source path

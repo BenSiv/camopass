@@ -357,3 +357,16 @@ function unhide_store(source_obfuscated, target_plain)
     
     return true, "Successfully unhid " .. count .. " entries."
 end
+
+-- Public API. Luam makes bare function statements local to this file, so
+-- callers reach these through the table require("obfuscator") returns.
+obfuscator = {}
+obfuscator.resolve_path = resolve_path
+obfuscator.split = split
+obfuscator.decrypt_file = decrypt_file
+obfuscator.load_index = load_index
+obfuscator.check_plain_store_sync = check_plain_store_sync
+obfuscator.obfuscate_store = obfuscate_store
+obfuscator.unhide_store = unhide_store
+
+return obfuscator

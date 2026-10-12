@@ -6,16 +6,16 @@ if arg != nil and arg[0] != nil then
         local_path = dir_match
     end
 end
-package.path = package.path .. ";" .. local_path .. "/?.lua;" .. local_path .. "/src/?.lua"
-require("obfuscator")
+package.path = package.path .. ";" .. local_path .. "/?.lua"
+obfuscator = require("obfuscator")
 
 -- Helper: Retrieve and validate default store path from settings.json if not passed explicitly
 function get_store_path(passed_path)
     if passed_path != nil and passed_path != "" then
-        return resolve_path(passed_path)
+        return obfuscator.resolve_path(passed_path)
     end
     
-    settings_file = resolve_path("~/.config/camopass/settings.json")
+    settings_file = obfuscator.resolve_path("~/.config/camopass/settings.json")
     f = io.open(settings_file, "r")
     if f == nil then
         print("Error: No store path provided, and ~/.config/camopass/settings.json does not exist.")
@@ -31,12 +31,12 @@ function get_store_path(passed_path)
         print("Error: Invalid settings.json configuration. Please run 'camopass init <store_path>' to reinitialize.")
         os.exit(false)
     end
-    return resolve_path(default_store)
+    return obfuscator.resolve_path(default_store)
 end
 
 -- Helper: Retrieve and validate plain store path from settings.json
 function get_plain_store_path()
-    settings_file = resolve_path("~/.config/camopass/settings.json")
+    settings_file = obfuscator.resolve_path("~/.config/camopass/settings.json")
     f = io.open(settings_file, "r")
     if f == nil then
         return nil
@@ -49,7 +49,7 @@ function get_plain_store_path()
     if plain_store == nil then
         return nil
     end
-    return resolve_path(plain_store)
+    return obfuscator.resolve_path(plain_store)
 end
 
 -- Print usage instructions using Luam's triple-quoted strings
@@ -85,16 +85,16 @@ if cmd == "init" then
         print("Error: init requires <store_path> [<plain_store_path>]")
         os.exit(false)
     end
-    store_path = resolve_path(args[2])
+    store_path = obfuscator.resolve_path(args[2])
     os.execute("mkdir -p " .. string.format("%q", store_path))
     plain_store_path = nil
     if #args == 3 then
-        plain_store_path = resolve_path(args[3])
+        plain_store_path = obfuscator.resolve_path(args[3])
         os.execute("mkdir -p " .. string.format("%q", plain_store_path))
     end
     
     -- Ensure configuration directory exists
-    config_dir = resolve_path("~/.config/camopass")
+    config_dir = obfuscator.resolve_path("~/.config/camopass")
     os.execute("mkdir -p " .. string.format("%q", config_dir))
     
     -- Write settings.json
@@ -122,7 +122,7 @@ elseif cmd == "hide" then
         print("Error: hide requires <source_store> <target_store> <gpg_id>")
         os.exit(false)
     end
-    success, err = obfuscate_store(args[2], args[3], args[4])
+    success, err = obfuscator.obfuscate_store(args[2], args[3], args[4])
     if not success then
         print("Obfuscation failed: " .. err)
         os.exit(false)
@@ -134,7 +134,7 @@ elseif cmd == "unhide" then
         print("Error: unhide requires <obfuscated_store> <plain_store>")
         os.exit(false)
     end
-    success, err = unhide_store(args[2], args[3])
+    success, err = obfuscator.unhide_store(args[2], args[3])
     if not success then
         print("Unhide failed: " .. err)
         os.exit(false)
@@ -149,7 +149,7 @@ elseif cmd == "list" then
         store_path = get_store_path(nil)
     end
     
-    mappings = load_index(store_path)
+    mappings = obfuscator.load_index(store_path)
     if mappings == nil then
         print("Error: Could not load index.gpg from " .. store_path)
         os.exit(false)
@@ -185,7 +185,7 @@ elseif cmd == "show" then
         os.exit(false)
     end
     
-    mappings = load_index(store_path)
+    mappings = obfuscator.load_index(store_path)
     if mappings == nil then
         print("Error: Could not load index.gpg")
         os.exit(false)
@@ -198,7 +198,7 @@ elseif cmd == "show" then
     end
     
     filepath = store_path .. "/" .. obf_file .. ".gpg"
-    decrypted = decrypt_file(filepath)
+    decrypted = obfuscator.decrypt_file(filepath)
     if decrypted == nil then
         print("Error: Decryption failed.")
         os.exit(false)
@@ -219,7 +219,7 @@ elseif cmd == "clip" then
         os.exit(false)
     end
     
-    mappings = load_index(store_path)
+    mappings = obfuscator.load_index(store_path)
     if mappings == nil then
         print("Error: Could not load index.gpg from " .. store_path)
         os.exit(false)
@@ -232,13 +232,13 @@ elseif cmd == "clip" then
     end
     
     filepath = store_path .. "/" .. obf_file .. ".gpg"
-    decrypted = decrypt_file(filepath)
+    decrypted = obfuscator.decrypt_file(filepath)
     if decrypted == nil or decrypted == "" then
         print("Error: Decryption failed or file is empty.")
         os.exit(false)
     end
     
-    lines = split(decrypted, "\n")
+    lines = obfuscator.split(decrypted, "\n")
     if #lines == 0 then
         print("Error: Decrypted content has no lines.")
         os.exit(false)
@@ -333,7 +333,7 @@ elseif cmd == "insert" or cmd == "generate" or cmd == "edit" or cmd == "remove" 
 
         -- 3. Refuse to re-hide if plain_store is missing entries target_store already
         -- tracks: obfuscate_store would silently delete them as "orphans".
-        sync_ok, missing_entries = check_plain_store_sync(target_store, plain_store, entry_name)
+        sync_ok, missing_entries = obfuscator.check_plain_store_sync(target_store, plain_store, entry_name)
         if not sync_ok then
             print("Error: plain_store is missing " .. #missing_entries .. " entrie(s) that target_store still tracks:")
             i = 1
@@ -347,7 +347,7 @@ elseif cmd == "insert" or cmd == "generate" or cmd == "edit" or cmd == "remove" 
         end
 
         -- 4. Run the obfuscation hide logic
-        success, err = obfuscate_store(plain_store, target_store, gpg_id)
+        success, err = obfuscator.obfuscate_store(plain_store, target_store, gpg_id)
         if not success then
             print("Obfuscation failed: " .. err)
             os.exit(false)

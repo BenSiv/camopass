@@ -9,7 +9,7 @@ end
 
 print("Initializing CamoPass CLI tests...")
 
-entry_script = local_path .. "/../entry.lua"
+entry_script = local_path .. "/../src/main.lua"
 
 function run_cli(cli_args)
     cmd = "luam " .. entry_script .. " " .. cli_args .. " 2>&1"
