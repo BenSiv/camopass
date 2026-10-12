@@ -30,7 +30,7 @@ cp src/obfuscator.lua .
 
 echo "Statically compiling native binary using luastatic..."
 export CC=gcc
-luam "$LUAM_DIR/lib/static/static.lua" entry.lua obfuscator.lua "$LIB_LUA" "$INC_LUA" $LIBS
+luam "$LUAM_DIR/lib/static/init.lua" entry.lua obfuscator.lua "$LIB_LUA" "$INC_LUA" $LIBS
 
 echo "Finalizing binary..."
 mkdir -p bin
