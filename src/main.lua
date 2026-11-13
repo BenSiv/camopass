@@ -14,42 +14,86 @@ function get_store_path(passed_path)
     if passed_path != nil and passed_path != "" then
         return obfuscator.resolve_path(passed_path)
     end
-    
+
     settings_file = obfuscator.resolve_path("~/.config/camopass/settings.json")
     f = io.open(settings_file, "r")
     if f == nil then
         print("Error: No store path provided, and ~/.config/camopass/settings.json does not exist.")
-        print("Please run 'camopass init <store_path>' first to set a default store.")
+        print("Please run 'camopass init <store_path> [<gpg_id>]' first to set a default store.")
         os.exit(false)
     end
     io.input(f)
     content = io.read("*a")
     io.close(f)
-    
+    io.input(io.stdin)
+
     default_store = string.match(content, '"default_store"%s*:%s*"([^"]+)"')
     if default_store == nil then
-        print("Error: Invalid settings.json configuration. Please run 'camopass init <store_path>' to reinitialize.")
+        print("Error: Invalid settings.json configuration. Please run 'camopass init <store_path> [<gpg_id>]' to reinitialize.")
         os.exit(false)
     end
     return obfuscator.resolve_path(default_store)
 end
 
--- Helper: Retrieve and validate plain store path from settings.json
-function get_plain_store_path()
-    settings_file = obfuscator.resolve_path("~/.config/camopass/settings.json")
-    f = io.open(settings_file, "r")
-    if f == nil then
-        return nil
+-- Helper: Write prompt/messages to stderr in Luam (without ':' method syntax)
+function stderr_write(text)
+    io.output(io.stderr)
+    io.write(text)
+    io.flush()
+    io.output(io.stdout)
+end
+
+-- Helper: Check if stdin is an interactive TTY
+function stdin_is_tty()
+    return obfuscator.exec_ok(os.execute("test -t 0"))
+end
+
+-- Helper: Read a single line from stdin without echoing when TTY
+function read_secret_line(prompt)
+    if stdin_is_tty() then
+        stderr_write(prompt)
+        os.execute("stty -echo 2>/dev/null")
+        io.input(io.stdin)
+        line = io.read("*l")
+        os.execute("stty echo 2>/dev/null")
+        stderr_write("\n")
+        return line
     end
-    io.input(f)
-    content = io.read("*a")
-    io.close(f)
-    
-    plain_store = string.match(content, '"plain_store"%s*:%s*"([^"]+)"')
-    if plain_store == nil then
-        return nil
+    io.input(io.stdin)
+    return io.read("*l")
+end
+
+-- Helper: Confirm overwrite/delete when interactive
+function confirm_prompt(prompt)
+    if not stdin_is_tty() then
+        return true
     end
-    return obfuscator.resolve_path(plain_store)
+    stderr_write(prompt .. " [y/N] ")
+    io.input(io.stdin)
+    ans = io.read("*l")
+    if ans == nil then
+        return false
+    end
+    ans = string.lower(obfuscator.trim(ans))
+    return ans == "y" or ans == "yes"
+end
+
+-- Helper: Commit and push if target store is a Git repository
+function sync_git_if_repo(target_store)
+    q_store = obfuscator.shell_quote(target_store)
+    status_git = os.execute("git -C " .. q_store .. " rev-parse --is-inside-work-tree >/dev/null 2>&1")
+    if obfuscator.exec_ok(status_git) then
+        print("Syncing target store with Git repository...")
+        os.execute("git -C " .. q_store .. " add -A")
+        os.execute("git -C " .. q_store .. " commit -m 'CamoPass sync' >/dev/null 2>&1")
+        has_remote = os.execute("git -C " .. q_store .. " remote | grep -q .")
+        if obfuscator.exec_ok(has_remote) then
+            os.execute("git -C " .. q_store .. " push")
+        end
+        print("Git sync complete!")
+        return true
+    end
+    return false
 end
 
 -- Print usage instructions using Luam's triple-quoted strings
@@ -58,17 +102,17 @@ function usage()
 CamoPass - Secure Metadata Obfuscator for Pass (MIT License)
 
 Usage:
-  camopass init <store_path> [<plain_store_path>]
+  camopass init <store_path> [<gpg_id>]
   camopass hide <source_store> <target_store> <gpg_id>
   camopass unhide <obfuscated_store> <plain_store>
-  camopass insert <entry_name>
-  camopass generate <entry_name> [<length>]
+  camopass insert [-m|--multiline] [-f|--force] <entry_name>
+  camopass generate [-n|--no-symbols] [-f|--force] <entry_name> [<length>]
   camopass list [<store_path>]
   camopass show [<store_path>] <entry_name>
   camopass clip [<store_path>] <entry_name>
   camopass edit <entry_name>
-  camopass remove <entry_name>
-  camopass sync
+  camopass remove [-f|--force] <entry_name>
+  camopass sync [<store_path>]
 """)
     os.exit(false)
 end
@@ -82,22 +126,44 @@ cmd = args[1]
 
 if cmd == "init" then
     if #args != 2 and #args != 3 then
-        print("Error: init requires <store_path> [<plain_store_path>]")
+        print("Error: init requires <store_path> [<gpg_id>]")
         os.exit(false)
     end
     store_path = obfuscator.resolve_path(args[2])
-    os.execute("mkdir -p " .. string.format("%q", store_path))
-    plain_store_path = nil
+    os.execute("mkdir -p " .. obfuscator.shell_quote(store_path))
+
+    gpg_id = nil
     if #args == 3 then
-        plain_store_path = obfuscator.resolve_path(args[3])
-        os.execute("mkdir -p " .. string.format("%q", plain_store_path))
+        gpg_id = obfuscator.trim(args[3])
+        if gpg_id != "" then
+            gpg_file = io.open(store_path .. "/.gpg-id", "w")
+            if gpg_file == nil then
+                print("Error: Could not write .gpg-id to " .. store_path)
+                os.exit(false)
+            end
+            io.output(gpg_file)
+            io.write(gpg_id .. "\n")
+            io.close(gpg_file)
+            io.output(io.stdout)
+
+            if not obfuscator.file_exists(store_path .. "/index.gpg") then
+                mappings, idx_err = obfuscator.load_or_create_index(store_path)
+                if mappings == nil then
+                    print("Error: " .. idx_err)
+                    os.exit(false)
+                end
+                ok_idx, save_err = obfuscator.save_index(store_path, mappings, gpg_id)
+                if not ok_idx then
+                    print("Error: " .. save_err)
+                    os.exit(false)
+                end
+            end
+        end
     end
-    
-    -- Ensure configuration directory exists
+
     config_dir = obfuscator.resolve_path("~/.config/camopass")
-    os.execute("mkdir -p " .. string.format("%q", config_dir))
-    
-    -- Write settings.json
+    os.execute("mkdir -p " .. obfuscator.shell_quote(config_dir))
+
     settings_file = config_dir .. "/settings.json"
     f = io.open(settings_file, "w")
     if f == nil then
@@ -105,14 +171,12 @@ if cmd == "init" then
         os.exit(false)
     end
     io.output(f)
-    if plain_store_path != nil then
-        io.write('{\n  "default_store": "' .. store_path .. '",\n  "plain_store": "' .. plain_store_path .. '"\n}\n')
-    else
-        io.write('{\n  "default_store": "' .. store_path .. '"\n}\n')
-    end
+    io.write('{\n  "default_store": "' .. store_path .. '"\n}\n')
     io.close(f)
-    if plain_store_path != nil then
-        print("Successfully initialized default store path: " .. store_path .. " and plain store path: " .. plain_store_path)
+    io.output(io.stdout)
+
+    if gpg_id != nil and gpg_id != "" then
+        print("Successfully initialized store: " .. store_path .. " (GPG ID: " .. gpg_id .. ")")
     else
         print("Successfully initialized default store path: " .. store_path)
     end
@@ -128,7 +192,7 @@ elseif cmd == "hide" then
         os.exit(false)
     end
     print(err)
-    
+
 elseif cmd == "unhide" then
     if #args != 3 then
         print("Error: unhide requires <obfuscated_store> <plain_store>")
@@ -140,7 +204,7 @@ elseif cmd == "unhide" then
         os.exit(false)
     end
     print(err)
-    
+
 elseif cmd == "list" then
     store_path = nil
     if #args >= 2 then
@@ -148,13 +212,13 @@ elseif cmd == "list" then
     else
         store_path = get_store_path(nil)
     end
-    
+
     mappings = obfuscator.load_index(store_path)
     if mappings == nil then
         print("Error: Could not load index.gpg from " .. store_path)
         os.exit(false)
     end
-    
+
     keys = {}
     k, v = next(mappings)
     while k != nil do
@@ -164,7 +228,7 @@ elseif cmd == "list" then
         k, v = next(mappings, k)
     end
     table.sort(keys)
-    
+
     i = 1
     while i <= #keys do
         print(keys[i])
@@ -184,19 +248,19 @@ elseif cmd == "show" then
         print("Error: show requires <entry_name> [or <store_path> <entry_name>]")
         os.exit(false)
     end
-    
+
     mappings = obfuscator.load_index(store_path)
     if mappings == nil then
         print("Error: Could not load index.gpg")
         os.exit(false)
     end
-    
+
     obf_file = mappings[entry_name]
     if obf_file == nil then
         print("Error: Entry '" .. entry_name .. "' not found in index.")
         os.exit(false)
     end
-    
+
     filepath = store_path .. "/" .. obf_file .. ".gpg"
     decrypted = obfuscator.decrypt_file(filepath)
     if decrypted == nil then
@@ -218,171 +282,255 @@ elseif cmd == "clip" then
         print("Error: clip requires <entry_name> [or <store_path> <entry_name>]")
         os.exit(false)
     end
-    
+
     mappings = obfuscator.load_index(store_path)
     if mappings == nil then
         print("Error: Could not load index.gpg from " .. store_path)
         os.exit(false)
     end
-    
+
     obf_file = mappings[entry_name]
     if obf_file == nil then
         print("Error: Entry '" .. entry_name .. "' not found in index.")
         os.exit(false)
     end
-    
+
     filepath = store_path .. "/" .. obf_file .. ".gpg"
     decrypted = obfuscator.decrypt_file(filepath)
     if decrypted == nil or decrypted == "" then
         print("Error: Decryption failed or file is empty.")
         os.exit(false)
     end
-    
+
     lines = obfuscator.split(decrypted, "\n")
     if #lines == 0 then
         print("Error: Decrypted content has no lines.")
         os.exit(false)
     end
     password = lines[1]
-    
-    -- Use a more robust clipboard copying strategy (Wayland then X11 fallback)
+
     success = false
-    p = io.popen("wl-copy", "w")
-    if p != nil then
-        io.output(p)
-        io.write(password)
-        io.close(p)
-        success = true
+    if obfuscator.exec_ok(os.execute("command -v wl-copy >/dev/null 2>&1")) then
+        p = io.popen("wl-copy", "w")
+        if p != nil then
+            io.output(p)
+            io.write(password)
+            io.close(p)
+            io.output(io.stdout)
+            success = true
+        end
     end
-    
-    if not success then
+
+    if not success and obfuscator.exec_ok(os.execute("command -v xclip >/dev/null 2>&1")) then
         p = io.popen("xclip -selection clipboard", "w")
         if p != nil then
             io.output(p)
             io.write(password)
             io.close(p)
+            io.output(io.stdout)
             success = true
         end
     end
 
     if success then
-        -- Fork a background process to clear clipboard after 45 seconds
-        -- Try clearing both Wayland and X11 clipboards
         os.execute("(sleep 45 && (wl-copy --clear || xclip -selection clipboard /dev/null)) >/dev/null 2>&1 &")
     else
         print("Error: Could not copy to clipboard. Please ensure 'wl-clipboard' or 'xclip' is installed.")
         os.exit(false)
     end
 
-elseif cmd == "insert" or cmd == "generate" or cmd == "edit" or cmd == "remove" then
-    if #args < 2 then
-        print("Error: " .. cmd .. " requires <entry_name>")
+elseif cmd == "insert" then
+    multiline = false
+    force = false
+    positional = {}
+    i = 2
+    while i <= #args do
+        a = args[i]
+        if a == "-m" or a == "--multiline" then
+            multiline = true
+        elseif a == "-f" or a == "--force" then
+            force = true
+        else
+            table.insert(positional, a)
+        end
+        i = i + 1
+    end
+
+    if #positional != 1 then
+        print("Error: insert requires [-m|--multiline] [-f|--force] <entry_name>")
+        os.exit(false)
+    end
+
+    entry_name = positional[1]
+    target_store = get_store_path(nil)
+
+    existing_mappings, idx_err = obfuscator.load_or_create_index(target_store)
+    if existing_mappings == nil then
+        print("Error: " .. idx_err)
+        os.exit(false)
+    end
+    if existing_mappings[entry_name] != nil and not force then
+        if not confirm_prompt("An entry already exists for " .. entry_name .. ". Overwrite it?") then
+            os.exit(false)
+        end
+    end
+
+    content = nil
+    if multiline then
+        if stdin_is_tty() then
+            print("Enter contents of " .. entry_name .. " and press Ctrl+D when finished:")
+        end
+        io.input(io.stdin)
+        content = io.read("*a")
+    elseif stdin_is_tty() then
+        pw1 = read_secret_line("Enter password for " .. entry_name .. ": ")
+        pw2 = read_secret_line("Retype password for " .. entry_name .. ": ")
+        if pw1 == nil or pw1 != pw2 then
+            print("Error: the entered passwords do not match.")
+            os.exit(false)
+        end
+        content = pw1
+    else
+        io.input(io.stdin)
+        content = io.read("*a")
+    end
+
+    if content == nil or obfuscator.trim(content) == "" then
+        print("Error: password cannot be empty.")
+        os.exit(false)
+    end
+
+    ok, err = obfuscator.upsert_entry(target_store, entry_name, content)
+    if not ok then
+        print("Error: " .. err)
+        os.exit(false)
+    end
+    print("Saved '" .. entry_name .. "' directly to obfuscated store.")
+    sync_git_if_repo(target_store)
+
+elseif cmd == "generate" then
+    no_symbols = false
+    force = false
+    positional = {}
+    i = 2
+    while i <= #args do
+        a = args[i]
+        if a == "-n" or a == "--no-symbols" then
+            no_symbols = true
+        elseif a == "-f" or a == "--force" then
+            force = true
+        else
+            table.insert(positional, a)
+        end
+        i = i + 1
+    end
+
+    if #positional < 1 or #positional > 2 then
+        print("Error: generate requires [-n|--no-symbols] [-f|--force] <entry_name> [<length>]")
+        os.exit(false)
+    end
+
+    entry_name = positional[1]
+    pw_len = 25
+    if #positional == 2 then
+        pw_len = tonumber(positional[2])
+        if pw_len == nil or pw_len < 1 then
+            print("Error: password length must be a positive integer.")
+            os.exit(false)
+        end
+    end
+
+    target_store = get_store_path(nil)
+    existing_mappings, idx_err = obfuscator.load_or_create_index(target_store)
+    if existing_mappings == nil then
+        print("Error: " .. idx_err)
+        os.exit(false)
+    end
+    if existing_mappings[entry_name] != nil and not force then
+        if not confirm_prompt("An entry already exists for " .. entry_name .. ". Overwrite it?") then
+            os.exit(false)
+        end
+    end
+
+    pw, gen_err = obfuscator.generate_password(pw_len, no_symbols)
+    if pw == nil then
+        print("Error: " .. gen_err)
+        os.exit(false)
+    end
+
+    ok, err = obfuscator.upsert_entry(target_store, entry_name, pw)
+    if not ok then
+        print("Error: " .. err)
+        os.exit(false)
+    end
+    print("The generated password for " .. entry_name .. " is:")
+    print(pw)
+    sync_git_if_repo(target_store)
+
+elseif cmd == "edit" then
+    if #args != 2 then
+        print("Error: edit requires <entry_name>")
         os.exit(false)
     end
     entry_name = args[2]
-    
-    plain_store = get_plain_store_path()
     target_store = get_store_path(nil)
-    
-    if plain_store == nil then
-        print("Error: plain_store is not configured in settings.json.")
-        print("Please run 'camopass init <default_store> <plain_store>' to initialize both.")
-        os.exit(false)
-    end
-    
-    -- 1. Read GPG key ID from the plain store's .gpg-id
-    gpg_id_file = plain_store .. "/.gpg-id"
-    f = io.open(gpg_id_file, "r")
-    if f == nil then
-        print("Error: Could not read .gpg-id from plain store: " .. plain_store)
-        os.exit(false)
-    end
-    io.input(f)
-    gpg_id = io.read("*l")
-    io.close(f)
-    if gpg_id == nil or gpg_id == "" then
-        print("Error: .gpg-id is empty in plain store.")
-        os.exit(false)
-    end
-    gpg_id = string.gsub(gpg_id, "%s+", "")
-    
-    -- 2. Execute pass command targeting plain_store
-    status = nil
-    if cmd == "insert" then
-        cmd_str = string.format("PASSWORD_STORE_DIR=%q pass insert %q", plain_store, entry_name)
-        status = os.execute(cmd_str)
-    elseif cmd == "edit" then
-        cmd_str = string.format("PASSWORD_STORE_DIR=%q pass edit %q", plain_store, entry_name)
-        status = os.execute(cmd_str)
-    elseif cmd == "remove" then
-        cmd_str = string.format("PASSWORD_STORE_DIR=%q pass rm %q", plain_store, entry_name)
-        status = os.execute(cmd_str)
-    else
-        extra_args = ""
-        i = 3
-        while i <= #args do
-            extra_args = extra_args .. " " .. args[i]
-            i = i + 1
-        end
-        cmd_str = string.format("PASSWORD_STORE_DIR=%q pass generate %q%s", plain_store, entry_name, extra_args)
-        status = os.execute(cmd_str)
-    end
-    
-    if status == true or status == 0 then
-        print("Successfully updated plain store! Re-hiding to target store...")
 
-        -- 3. Refuse to re-hide if plain_store is missing entries target_store already
-        -- tracks: obfuscate_store would silently delete them as "orphans".
-        sync_ok, missing_entries = obfuscator.check_plain_store_sync(target_store, plain_store, entry_name)
-        if not sync_ok then
-            print("Error: plain_store is missing " .. #missing_entries .. " entrie(s) that target_store still tracks:")
-            i = 1
-            while i <= #missing_entries do
-                print("  - " .. missing_entries[i])
-                i = i + 1
-            end
-            print("Refusing to re-hide (this would delete them from target_store).")
-            print("Run 'camopass unhide " .. target_store .. " " .. plain_store .. "' to resync plain_store first.")
+    ok, msg = obfuscator.edit_entry(target_store, entry_name)
+    if not ok then
+        print("Error: " .. msg)
+        os.exit(false)
+    end
+    print(msg)
+    if msg != "Password unchanged." then
+        sync_git_if_repo(target_store)
+    end
+
+elseif cmd == "remove" then
+    force = false
+    positional = {}
+    i = 2
+    while i <= #args do
+        a = args[i]
+        if a == "-f" or a == "--force" then
+            force = true
+        else
+            table.insert(positional, a)
+        end
+        i = i + 1
+    end
+
+    if #positional != 1 then
+        print("Error: remove requires [-f|--force] <entry_name>")
+        os.exit(false)
+    end
+
+    entry_name = positional[1]
+    target_store = get_store_path(nil)
+
+    if not force then
+        if not confirm_prompt("Are you sure you would like to delete " .. entry_name .. "?") then
             os.exit(false)
         end
+    end
 
-        -- 4. Run the obfuscation hide logic
-        success, err = obfuscator.obfuscate_store(plain_store, target_store, gpg_id)
-        if not success then
-            print("Obfuscation failed: " .. err)
-            os.exit(false)
-        end
-        print("Obfuscation successful!")
-        
-        -- 5. Check if target store is a Git repository and commit/push
-        status_git = os.execute("git -C " .. string.format("%q", target_store) .. " rev-parse --is-inside-work-tree >/dev/null 2>&1")
-        if status_git == true or status_git == 0 then
-            print("Syncing with target Git repository...")
-            os.execute("git -C " .. string.format("%q", target_store) .. " add -A")
-            os.execute("git -C " .. string.format("%q", target_store) .. " commit -m " .. string.format("%q", "CamoPass sync"))
-            os.execute("git -C " .. string.format("%q", target_store) .. " push")
-            print("Git sync complete!")
-        end
-    else
-        print("Error: pass " .. cmd .. " command failed.")
+    ok, msg = obfuscator.remove_entry(target_store, entry_name)
+    if not ok then
+        print("Error: " .. msg)
         os.exit(false)
     end
+    print(msg)
+    sync_git_if_repo(target_store)
 
 elseif cmd == "sync" then
-    plain_store = get_plain_store_path()
-    target_store = get_store_path(nil)
-    
-    if target_store != nil then
-        status_git = os.execute("git -C " .. string.format("%q", target_store) .. " rev-parse --is-inside-work-tree >/dev/null 2>&1")
-        if status_git == true or status_git == 0 then
-            print("Syncing target store with Git repository...")
-            os.execute("git -C " .. string.format("%q", target_store) .. " add -A")
-            os.execute("git -C " .. string.format("%q", target_store) .. " commit -m " .. string.format("%q", "CamoPass sync") .. " >/dev/null 2>&1")
-            os.execute("git -C " .. string.format("%q", target_store) .. " push")
-            print("Git sync complete!")
-        else
-            print("Target store is not a Git repository.")
-        end
+    target_store = nil
+    if #args >= 2 then
+        target_store = get_store_path(args[2])
+    else
+        target_store = get_store_path(nil)
+    end
+
+    if not sync_git_if_repo(target_store) then
+        print("Target store is not a Git repository.")
     end
 
 else

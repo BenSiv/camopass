@@ -12,10 +12,11 @@ CamoPass solves this by **obfuscating your entire password store filesystem** in
 
 ## Key Features
 
-* **Absolute Metadata Privacy:** Directory hierarchies, filenames, and change-history are replaced by completely opaque hash-based identifiers (e.g. `0a1b2c3d4e.gpg`). GitHub sees absolutely zero service names or account identities.
-* **Perfect Security & Zero Decryption during Migration:** CamoPass migrates your store by copying already-encrypted `.gpg` files directly into their new obfuscated locations. **No passwords are decrypted in RAM or disk during obfuscation**, and you do not need to enter your GPG passphrase to migrate.
-* **Stable Deterministic Hashing:** Uses salted SHA256 hashing to generate obfuscated names, ensuring your file mappings remain perfectly stable and consistent even as you add new entries.
-* **Silent Clipboard Integration:** The `clip` command decrypts the entry and streams it directly to your system's Wayland clipboard (`wl-copy`) with **zero terminal output**. It forks a silent background process to automatically clear your clipboard after exactly 45 seconds.
+* **Absolute Metadata Privacy (Local & Remote):** Directory hierarchies, filenames, and change-history are replaced by completely opaque hash-based identifiers (e.g. `0a1b2c3d4e.gpg`) both locally and on Git remotes. Neither your local disk nor GitHub sees any service names or account identities.
+* **Stateless Direct Mutations (Zero `plain_store` Required):** `insert`, `generate`, `edit`, and `remove` operate directly on the obfuscated CamoPass store via private `0600` `/dev/shm` RAM buffers that are immediately wiped with `shred`. No `pass` CLI or shadow plaintext-tree vault is needed on disk.
+* **Perfect Security & Zero Decryption during Migration:** CamoPass migrates an existing `pass` store by copying already-encrypted `.gpg` files directly into their new obfuscated locations. **No passwords are decrypted in RAM or disk during migration**, and you do not need to enter your GPG passphrase to migrate.
+* **Stable Deterministic Hashing:** Uses salted SHA256 hashing to generate obfuscated names, ensuring your file mappings remain perfectly stable and consistent across updates and Git commits.
+* **Silent Clipboard Integration:** The `clip` command decrypts the entry and streams it directly to your system's Wayland/X11 clipboard (`wl-copy` or `xclip`) with **zero terminal output**, automatically clearing the clipboard after 45 seconds.
 
 ---
 
@@ -63,44 +64,51 @@ sudo make uninstall
 
 ## Command Line Usage
 
-### 1. Hide an Existing Password Store
-To convert a standard readable `pass` repository into a secure, obfuscated repository:
+### 1. Initialize or Point to an Obfuscated Store
+Initialize a brand-new obfuscated store (or point `~/.config/camopass/settings.json` to an existing one):
+```bash
+camopass init <store_path> [<gpg_recipient_id>]
+```
+
+### 2. Add, Generate, Edit, or Remove Credentials Directly
+Operate directly on the obfuscated store without maintaining any un-obfuscated `plain_store` on disk:
+```bash
+# Insert a single-line or multiline (-m) credential
+camopass insert github/personal
+camopass insert -m work/aws
+
+# Generate a cryptographically random password (default 25 chars; -n for alphanumeric)
+camopass generate finance/bank 32
+camopass generate -n wifi/home 24
+
+# Edit an entry inside a private shredded /dev/shm RAM buffer via $EDITOR
+camopass edit github/personal
+
+# Shred and remove an entry from the obfuscated store and index.gpg
+camopass remove wifi/home
+```
+If `<store_path>` is a Git repository, mutations automatically commit (and push if a remote is configured).
+
+### 3. Migrate an Existing `pass` Store (`hide` / `unhide`)
+To convert a standard readable `pass` repository into an obfuscated CamoPass repository:
 ```bash
 camopass hide <source_store> <target_store> <gpg_recipient_id>
 ```
-*Example:*
-```bash
-camopass hide /path/to/source-store /path/to/target-store my-gpg-key-id
-```
+This populates `<target_store>` with:
+* `index.gpg` - The encrypted lookup index.
+* `0a1b2c3d4e.gpg`, `f1e2d3c4b5.gpg`, ... - Encrypted GPG credentials under opaque 10-hex-character names.
+* `.gpg-id` - Your GPG recipient ID.
 
-This will create `/path/to/target-store` populated with:
-* `index.gpg` - The securely encrypted lookup index.
-* `0a1b2c3d4e.gpg`, `f1e2d3c4b5.gpg`, ... - Your fully encrypted GPG credentials under generic names.
-* `.gpg-id` - Your GPG key recipient config.
-
-### 2. Restore an Obfuscated Store (Unhide)
-To perfectly reconstruct a standard plaintext `pass` repository from an obfuscated CamoPass store:
+To reconstruct a standard `pass` directory tree if ever needed:
 ```bash
 camopass unhide <obfuscated_store> <plain_store>
 ```
-This is useful for recovering a corrupted plain store or migrating away from CamoPass.
 
-### 3. List All Credentials
-To view all your human-readable credential paths (requires GPG decryption of the index once):
+### 4. List, Show, and Copy Credentials
 ```bash
-camopass list /path/to/target-store
-```
-
-### 3. Print a Password
-To print the decrypted password details to stdout:
-```bash
-camopass show /path/to/target-store google/username
-```
-
-### 4. Copy to Clipboard Silently
-To silently copy the password to your Wayland clipboard (clears automatically in 45 seconds):
-```bash
-camopass clip /path/to/target-store google/username
+camopass list [<store_path>]
+camopass show [<store_path>] google/username
+camopass clip [<store_path>] google/username
 ```
 
 ---
