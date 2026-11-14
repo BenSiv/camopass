@@ -27,7 +27,7 @@ function get_store_path(passed_path)
     io.close(f)
     io.input(io.stdin)
 
-    default_store = string.match(content, '"default_store"%s*:%s*"([^"]+)"')
+    default_store = string.match(content, "\"default_store\"%s*:%s*\"([^\"]+)\"")
     if default_store == nil then
         print("Error: Invalid settings.json configuration. Please run 'camopass init <store_path> [<gpg_id>]' to reinitialize.")
         os.exit(false)
@@ -98,7 +98,7 @@ end
 
 -- Print usage instructions using Luam's triple-quoted strings
 function usage()
-    print("""
+    print(string.dedent("""
 CamoPass - Secure Metadata Obfuscator for Pass (MIT License)
 
 Usage:
@@ -113,7 +113,7 @@ Usage:
   camopass edit <entry_name>
   camopass remove [-f|--force] <entry_name>
   camopass sync [<store_path>]
-""")
+"""))
     os.exit(false)
 end
 
@@ -171,7 +171,7 @@ if cmd == "init" then
         os.exit(false)
     end
     io.output(f)
-    io.write('{\n  "default_store": "' .. store_path .. '"\n}\n')
+    io.write("{\n  \"default_store\": \"" .. store_path .. "\"\n}\n")
     io.close(f)
     io.output(io.stdout)
 
