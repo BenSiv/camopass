@@ -50,6 +50,7 @@ end
 print("Initializing CamoPass CLI tests (isolated HOME & GNUPGHOME)...")
 
 entry_script = local_path .. "/../src/main.lua"
+camopass_bin = os.getenv("CAMOPASS_BIN")
 gpg_id = os.getenv("CAMOPASS_TEST_GPG_ID")
 assert(gpg_id != nil and gpg_id != "", "Missing isolated GPG fingerprint")
 
@@ -57,29 +58,32 @@ function shell_quote(s)
     return "'" .. string.gsub(tostring(s), "'", "'\\''") .. "'"
 end
 
+function cli_prefix()
+    if camopass_bin != nil and camopass_bin != "" then
+        return shell_quote(camopass_bin)
+    end
+    return "luam " .. shell_quote(entry_script)
+end
+
 function run_cli(cli_args)
-    cmd = "luam " .. shell_quote(entry_script) .. " " .. cli_args .. " 2>&1"
+    cmd = cli_prefix() .. " " .. cli_args .. " 2>&1"
     p = io.popen(cmd)
     if p == nil then
         return false, "Failed to run command"
     end
-    io.input(p)
-    out = io.read("*a")
+    out = io.read(p, "*a")
     io.close(p)
-    io.input(io.stdin)
     return true, out
 end
 
 function run_cli_stdin(stdin_payload, cli_args)
-    cmd = "printf %s " .. shell_quote(stdin_payload) .. " | luam " .. shell_quote(entry_script) .. " " .. cli_args .. " 2>&1"
+    cmd = "printf %s " .. shell_quote(stdin_payload) .. " | " .. cli_prefix() .. " " .. cli_args .. " 2>&1"
     p = io.popen(cmd)
     if p == nil then
         return false, "Failed to run piped command"
     end
-    io.input(p)
-    out = io.read("*a")
+    out = io.read(p, "*a")
     io.close(p)
-    io.input(io.stdin)
     return true, out
 end
 

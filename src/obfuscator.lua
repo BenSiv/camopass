@@ -1,115 +1,46 @@
 -- CamoPass Core Obfuscator Library (Luam)
 
--- Helper: Safe POSIX single-quote shell escaping (prevents $, `, \, and newline expansion in /bin/sh)
-function shell_quote(s)
-    return "'" .. string.gsub(tostring(s), "'", "'\\''") .. "'"
-end
+const crypto = require("crypto")
+const ext = require("external_tool")
+const paths = require("paths")
 
--- Helper: Resolve tilde (~) paths to absolute home directory paths and ensure absolute paths
+shell_quote = ext.shell_quote
+file_exists = paths.file_exists
+
+-- Resolve tilde (~) paths to absolute home directory paths and ensure absolute paths
 function resolve_path(path)
-    p = path
-    if string.sub(p, 1, 2) == "~/" then
-        p = os.getenv("HOME") .. string.sub(p, 2)
-    elseif p == "~" then
-        p = os.getenv("HOME")
-    end
-
-    -- Use realpath to ensure we have an absolute path (even if it doesn't exist yet)
-    handle = io.popen("realpath -m " .. shell_quote(p) .. " 2>/dev/null")
-    if handle != nil then
-        io.input(handle)
-        result = io.read("*l")
-        io.close(handle)
-        io.input(io.stdin)
-        if result != nil and result != "" then
-            return result
+    p = paths.expand_home(path)
+    out, _, _ = ext.capture("realpath -m " .. shell_quote(p) .. " 2>/dev/null")
+    if out != nil then
+        cleaned = string.trim(out)
+        if cleaned != "" then
+            return cleaned
         end
     end
-
     return p
 end
 
--- Helper: Split a string by delimiter using a while loop (Luam style)
 function split(str, sep)
-    result = {}
-    start = 1
-    s_idx, e_idx = string.find(str, sep, start, true)
-    while s_idx != nil do
-        table.insert(result, string.sub(str, start, s_idx - 1))
-        start = e_idx + 1
-        s_idx, e_idx = string.find(str, sep, start, true)
-    end
-    table.insert(result, string.sub(str, start))
-    return result
+    return string.split(str, sep)
 end
 
--- Helper: Trim whitespace
 function trim(s)
-    return string.match(s, "^%s*(.-)%s*$")
+    return string.trim(s)
 end
 
--- Helper: Check if a file exists on disk
-function file_exists(filepath)
-    f = io.open(filepath, "rb")
-    if f != nil then
-        io.close(f)
-        return true
-    end
-    return false
-end
-
--- Helper: Securely shred and delete a temporary file
 function shred_file(filepath)
     q = shell_quote(filepath)
     os.execute("shred -u -z -n 3 " .. q .. " 2>/dev/null || rm -f " .. q)
 end
 
--- Helper: Normalize os.execute return value across Lua 5.1 / Luam builds
 function exec_ok(status)
     return status == true or status == 0
 end
 
--- Helper: Generate a secure 16-character hex salt from /dev/urandom
 function generate_salt()
-    f = io.open("/dev/urandom", "rb")
-    if f == nil then
-        math.randomseed(os.time())
-        s = ""
-        chars = "0123456789abcdef"
-        i = 1
-        while i <= 16 do
-            r = math.random(1, 16)
-            s = s .. string.sub(chars, r, r)
-            i = i + 1
-        end
-        return s
-    end
-    io.input(f)
-    bytes = io.read(8)
-    io.close(f)
-    io.input(io.stdin)
-    if bytes == nil or string.len(bytes) == 0 then
-        math.randomseed(os.time())
-        s = ""
-        chars = "0123456789abcdef"
-        i = 1
-        while i <= 16 do
-            r = math.random(1, 16)
-            s = s .. string.sub(chars, r, r)
-            i = i + 1
-        end
-        return s
-    end
-    s = ""
-    i = 1
-    while i <= string.len(bytes) do
-        s = s .. string.format("%02x", string.byte(bytes, i))
-        i = i + 1
-    end
-    return s
+    return crypto.random_hex(8)
 end
 
--- Helper: Generate a cryptographically random password from /dev/urandom
 function generate_password(length, no_symbols)
     len = length
     if len == nil or len < 1 then
@@ -124,20 +55,9 @@ function generate_password(length, no_symbols)
     n = string.len(charset)
     limit = math.floor(256 / n) * n
 
-    f = io.open("/dev/urandom", "rb")
-    if f == nil then
-        return nil, "Could not open /dev/urandom for password generation."
-    end
-
-    io.input(f)
     out = ""
     while string.len(out) < len do
-        chunk = io.read(64)
-        if chunk == nil or string.len(chunk) == 0 then
-            io.close(f)
-            io.input(io.stdin)
-            return nil, "Failed reading random bytes from /dev/urandom."
-        end
+        chunk = crypto.random_bytes(64)
         i = 1
         while i <= string.len(chunk) and string.len(out) < len do
             b = string.byte(chunk, i)
@@ -148,33 +68,11 @@ function generate_password(length, no_symbols)
             i = i + 1
         end
     end
-    io.close(f)
-    io.input(io.stdin)
     return out, nil
 end
 
--- Helper: SHA-256 hash using system command
 function sha256(str)
-    q = shell_quote(str)
-    cmd = "printf %s " .. q .. " | sha256sum 2>/dev/null"
-    p = io.popen(cmd)
-    if p == nil then
-        cmd = "printf %s " .. q .. " | openssl dgst -sha256 2>/dev/null"
-        p = io.popen(cmd)
-    end
-    if p == nil then
-        cmd = "printf %s " .. q .. " | md5sum 2>/dev/null"
-        p = io.popen(cmd)
-    end
-    if p == nil then
-        return nil
-    end
-    io.input(p)
-    out = io.read("*a")
-    io.close(p)
-    io.input(io.stdin)
-    hash = string.match(out, "(%x+)")
-    return hash
+    return crypto.sha256(str)
 end
 
 -- Compute deterministic 10-char obfuscated filename stem

@@ -17,9 +17,7 @@ uninstall:
 	@echo "CamoPass uninstalled successfully."
 
 test:
-	@echo "Running test suite..."
-	luam tst/test_obfuscator.lua
-	luam tst/test_cli.lua
+	bash bld/test.sh
 
 clean:
 	rm -rf bin/ obj/

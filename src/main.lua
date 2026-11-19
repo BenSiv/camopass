@@ -7,40 +7,36 @@ if arg != nil and arg[0] != nil then
     end
 end
 package.path = package.path .. ";" .. local_path .. "/?.lua"
-obfuscator = require("obfuscator")
+const dkjson = require("dkjson")
+const git = require("git")
+const obfuscator = require("obfuscator")
+const paths = require("paths")
 
--- Helper: Retrieve and validate default store path from settings.json if not passed explicitly
+-- Retrieve and validate default store path from settings.json if not passed explicitly
 function get_store_path(passed_path)
     if passed_path != nil and passed_path != "" then
         return obfuscator.resolve_path(passed_path)
     end
 
     settings_file = obfuscator.resolve_path("~/.config/camopass/settings.json")
-    f = io.open(settings_file, "r")
-    if f == nil then
+    content = paths.read_file(settings_file)
+    if content == nil then
         print("Error: No store path provided, and ~/.config/camopass/settings.json does not exist.")
         print("Please run 'camopass init <store_path> [<gpg_id>]' first to set a default store.")
         os.exit(false)
     end
-    io.input(f)
-    content = io.read("*a")
-    io.close(f)
-    io.input(io.stdin)
 
-    default_store = string.match(content, "\"default_store\"%s*:%s*\"([^\"]+)\"")
-    if default_store == nil then
+    parsed = dkjson.decode(content)
+    if type(parsed) != "table" or type(parsed.default_store) != "string" or parsed.default_store == "" then
         print("Error: Invalid settings.json configuration. Please run 'camopass init <store_path> [<gpg_id>]' to reinitialize.")
         os.exit(false)
     end
-    return obfuscator.resolve_path(default_store)
+    return obfuscator.resolve_path(parsed.default_store)
 end
 
--- Helper: Write prompt/messages to stderr in Luam (without ':' method syntax)
 function stderr_write(text)
-    io.output(io.stderr)
-    io.write(text)
-    io.flush()
-    io.output(io.stdout)
+    io.write(io.stderr, text)
+    io.flush(io.stderr)
 end
 
 -- Helper: Check if stdin is an interactive TTY
@@ -78,11 +74,9 @@ function confirm_prompt(prompt)
     return ans == "y" or ans == "yes"
 end
 
--- Helper: Commit and push if target store is a Git repository
 function sync_git_if_repo(target_store)
     q_store = obfuscator.shell_quote(target_store)
-    status_git = os.execute("git -C " .. q_store .. " rev-parse --is-inside-work-tree >/dev/null 2>&1")
-    if obfuscator.exec_ok(status_git) then
+    if git.is_repo(target_store) then
         print("Syncing target store with Git repository...")
         os.execute("git -C " .. q_store .. " add -A")
         os.execute("git -C " .. q_store .. " commit -m 'CamoPass sync' >/dev/null 2>&1")
@@ -162,18 +156,12 @@ if cmd == "init" then
     end
 
     config_dir = obfuscator.resolve_path("~/.config/camopass")
-    os.execute("mkdir -p " .. obfuscator.shell_quote(config_dir))
-
     settings_file = config_dir .. "/settings.json"
-    f = io.open(settings_file, "w")
-    if f == nil then
+    ok_w, _ = paths.write_atomic(settings_file, dkjson.encode({default_store = store_path}, {indent = true}) .. "\n")
+    if not ok_w then
         print("Error: Could not write settings to " .. settings_file)
         os.exit(false)
     end
-    io.output(f)
-    io.write("{\n  \"default_store\": \"" .. store_path .. "\"\n}\n")
-    io.close(f)
-    io.output(io.stdout)
 
     if gpg_id != nil and gpg_id != "" then
         print("Successfully initialized store: " .. store_path .. " (GPG ID: " .. gpg_id .. ")")
